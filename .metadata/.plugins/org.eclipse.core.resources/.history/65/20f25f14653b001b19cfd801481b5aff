@@ -1,0 +1,9 @@
+package edu.ufl.cise.cnt5106c.messages;
+
+
+public class NotInterestedMessage  extends PeerMessage {
+
+    public NotInterestedMessage() {
+        super (MessageType.NotInterested);
+    }
+}

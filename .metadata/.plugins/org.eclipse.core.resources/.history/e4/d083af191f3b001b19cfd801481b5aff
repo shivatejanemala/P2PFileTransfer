@@ -1,0 +1,36 @@
+package edu.ufl.cise.cnt5106c.io;
+
+import edu.ufl.cise.cnt5106c.messages.Handshake;
+import edu.ufl.cise.cnt5106c.messages.PeerMessage;
+import edu.ufl.cise.cnt5106c.messages.MessageType;
+import java.io.DataInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.ObjectInput;
+
+
+public class CustomInputStream extends DataInputStream implements ObjectInput {
+
+    private boolean isHandShakeReceived = false; // "true" for actual message ,"false" for handshake message
+
+    public CustomInputStream(InputStream in) {
+        super(in);
+    }
+
+    @Override
+    public Object readObject() throws ClassNotFoundException, IOException {
+        if (isHandShakeReceived) { // Check if the message to be read is handshake or actual message
+            final int length = readInt();
+            final int payloadLength = length - 1; // subtract 1 for the message type
+            PeerMessage message = PeerMessage.getInstance(payloadLength, MessageType.valueOf (readByte()));
+            message.read(this);
+            return message;
+        }
+        else {
+            Handshake handshake = new Handshake();
+            handshake.read(this);
+            isHandShakeReceived = true;
+            return handshake;
+        }
+    }
+}

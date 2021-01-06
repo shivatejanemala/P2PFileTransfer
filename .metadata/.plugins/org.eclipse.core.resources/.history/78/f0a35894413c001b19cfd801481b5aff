@@ -1,0 +1,124 @@
+package peerProcessPackage;
+
+import peerProcessPackage.configuration.CommonProperties;
+import peerProcessPackage.file.FileDirectory;
+import peerProcessPackage.log.LoggerConfiguration;
+
+import java.util.BitSet;
+import java.util.Collection;
+import java.util.LinkedList;
+import java.util.Properties;
+
+
+public class FileManager {
+
+    private BitSet isPieceAvailable; // Used to handle the availability of each piece
+    private final Collection<FileManagerListenerInterface> fileManagerListeners = new LinkedList<>();
+    private FileDirectory fileLocation; // Location of the file to be read (or) created
+    private final double pieceSize; // Size of the piece as mentioned in properties
+    private final int noOfPieces; // Number  of the pieces determined  as per parameter in properties
+    private final RequestedParts piecesBeingRequested; // Handles the details about pieces being Requested
+
+    FileManager (int peerId, Properties properties) {
+
+    	this.fileLocation = new FileDirectory(peerId, properties.getProperty (CommonProperties.FileName.toString()));
+    	this.pieceSize = Integer.parseInt(properties.getProperty(CommonProperties.PieceSize.toString()));
+    	this.noOfPieces = (int) Math.ceil (Integer.parseInt(properties.getProperty(CommonProperties.FileSize.toString()))/pieceSize);
+    	this.isPieceAvailable = new BitSet(noOfPieces);
+    	this.piecesBeingRequested = new RequestedParts(noOfPieces, Integer.parseInt(properties.getProperty(CommonProperties.UnchokingInterval.toString())) * 1000);
+    	
+    }
+
+ 
+
+    /**
+     *Function used to handle the writing of the file piece once received
+     * @param pieceId
+     * @param piece
+     */
+    public synchronized void addPiece (int pieceId, byte[] piece) {
+        
+       // Determine whether it is a piece which peer doesnt have and write the piece on to a file if its new piece
+        final boolean isNewPiece = !isPieceAvailable.get(pieceId);
+        isPieceAvailable.set (pieceId);
+
+        if (isNewPiece) {
+            fileLocation.writeBytesAsPieces(piece, pieceId);
+            for (FileManagerListenerInterface listener : fileManagerListeners) {
+                listener.isPieceArrived (pieceId);
+            }
+        }
+        // If all pieces are available, all the pieces are merged together to create the final complete file
+        if (isCompleteFileAvailable()) {
+            fileLocation.generateCompletedFile(isPieceAvailable.cardinality());
+            for (FileManagerListenerInterface listener : fileManagerListeners) {
+                listener.isFileDownloadComplete();
+            }
+        }
+    }
+
+    /**
+     * Function used to find the pieceId which can be requested
+     * @param pieces available at the peer
+     * @return the pieceId to be requested from the peer.
+     */
+    synchronized int determinePieceToBeRequested(BitSet availableParts) {
+        availableParts.andNot(getReceivedParts());
+        return piecesBeingRequested.getPartToRequest (availableParts);
+    }
+
+ 
+
+    /**
+     * Set all Pieces of file as available.
+     */
+    public synchronized void setAllPiecesAvailable()
+    {
+        for (int i = 0; i < noOfPieces; i++) {
+            isPieceAvailable.set(i, true);
+        }
+        LoggerConfiguration.getLogger().debug("Received parts set to: " + isPieceAvailable.toString());
+    }
+    
+    /**
+     * Checks whether all the pieces of the file are available
+     */
+    private boolean isCompleteFileAvailable() {
+        for (int i = 0; i < noOfPieces; i++) {
+            if (!isPieceAvailable.get(i)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    public synchronized int getNumberOfReceivedParts() {
+        return isPieceAvailable.cardinality();
+    }
+
+    byte[] getPiece (int partId) {
+        byte[] piece = fileLocation.getPieceAsBytes(partId);
+        return piece;
+    }
+
+    public void registerListener (FileManagerListenerInterface listener) {
+        fileManagerListeners.add (listener);
+    }
+
+    public void splitFile(){
+        fileLocation.splitFile((int) pieceSize);
+    }
+
+   
+
+    public int getBitmapSize() {
+        return noOfPieces;
+    }
+    public synchronized BitSet getReceivedParts () {
+        return (BitSet) isPieceAvailable.clone();
+    }
+
+    synchronized public boolean hasPart(int pieceIndex) {
+        return isPieceAvailable.get(pieceIndex);
+    }
+   
+}

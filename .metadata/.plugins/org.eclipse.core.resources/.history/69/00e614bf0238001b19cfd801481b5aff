@@ -1,0 +1,222 @@
+package edu.ufl.cise.cnt5106c;
+
+import edu.ufl.cise.cnt5106c.conf.RemotePeerInfo;
+import edu.ufl.cise.cnt5106c.log.FileTransferUpdateLogger;
+import edu.ufl.cise.cnt5106c.log.LogHelper;
+import edu.ufl.cise.cnt5106c.messages.Choke;
+import edu.ufl.cise.cnt5106c.messages.Have;
+import edu.ufl.cise.cnt5106c.messages.NotInterested;
+import edu.ufl.cise.cnt5106c.messages.Unchoke;
+
+import java.io.IOException;
+import java.net.ConnectException;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.Properties;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+
+public class FileTransferProcess implements Runnable, FileManagerListener, PeerManagerListener {
+    private final int peerId; // Used to handle the peerId of the peer
+    private final int portNo; // Maintains the port Number of the peer to which others need to be connected
+    private final boolean hasFile; // Flag used to set true when peer has the complete file
+    private final Properties commonProps; // Properties of the file transfer protocol read from Common.cfg
+    private final FileManager fileManager; 
+    private final PeerManager peerManager;
+    private final FileTransferUpdateLogger ftupdateLogger; // ftupdateLogger used to log the updates in the file transfer protocol for individual peer
+    private final AtomicBoolean _fileCompleted = new AtomicBoolean(false);  // Flag used to set true when peer has the complete file
+    private final AtomicBoolean _peersFileCompleted = new AtomicBoolean(false); // Flag used to set true when all the peers has the complete file 
+    private final AtomicBoolean _terminate = new AtomicBoolean(false); // Flag used to set true when peer has recieved the complete file
+    private final Collection<ConnectionHandler> _connHandlers = Collections.newSetFromMap(new ConcurrentHashMap<ConnectionHandler, Boolean>()); //List used to handle the  connections to other peers
+
+    public FileTransferProcess(int peerId, String address, int port, boolean hasFile, Collection<RemotePeerInfo> peerInfo, Properties conf) {
+        this.peerId = peerId;
+        this.portNo = port;
+        this.hasFile = hasFile;
+        this.commonProps = conf;    
+        this.fileManager = new FileManager(this.peerId, this.commonProps);
+        ArrayList<RemotePeerInfo> remotePeers = new ArrayList<>(peerInfo);
+        for (RemotePeerInfo ri : remotePeers) {
+            if (Integer.parseInt(ri._peerId) == peerId) {
+                // rmeove myself
+                remotePeers.remove(ri);
+                break;
+            }
+        }
+        this.peerManager = new PeerManager(this.peerId, remotePeers, this.fileManager.getBitmapSize(), commonProps);
+        this.ftupdateLogger = new FileTransferUpdateLogger(peerId);
+        this._fileCompleted.set(this.hasFile);
+    }
+
+    /*
+    * Function used to initialize the file managers and the peer managers to handle the file transfer and communication between peers
+    *
+    */
+    void initializeManagers() {
+    	this.fileManager.registerListener(this);
+    	this.peerManager.registerListener(this);
+
+    	// If the peer already has a file, it splits the file to pieces for transferring to other peers
+        if (this.hasFile) {
+            LogHelper.getLogger().debug("Creating the pieces for the transfer");
+            fileManager.splitFile();
+            fileManager.setAllParts();
+        }
+        
+        // Initialize the  PeerManager Thread
+        Thread t = new Thread(peerManager);
+        t.setName("peerManager- "+ peerId);
+        t.start();
+    }
+
+    /*
+     * Function used to initialize the file transfer process between peers
+     *
+     */
+    @Override
+    public void run() {
+        try {
+            ServerSocket serverSocket = new ServerSocket(portNo);
+            while (!_terminate.get()) {
+                try {
+                    LogHelper.getLogger().info(Thread.currentThread().getName() + ": Peer:" + peerId + " started listening on port " + portNo + ".");
+                    addConnHandler(new ConnectionHandler(peerId, serverSocket.accept(), fileManager, peerManager));
+
+                } catch (Exception e) {
+                    LogHelper.getLogger().warning(e);
+                }
+            }
+        } catch (IOException ex) {
+            LogHelper.getLogger().warning(ex);
+        } finally {
+            LogHelper.getLogger().warning(Thread.currentThread().getName()
+                    + " terminating, TCP connections will no longer be accepted.");
+        }
+    }
+
+    /*
+     * Function used to start the connection from the peer to other peers in the map
+     *
+     */
+    void connectToPeers(Collection<RemotePeerInfo> peersToConnectTo) {
+        Iterator<RemotePeerInfo> iter = peersToConnectTo.iterator();
+        while (iter.hasNext()) {
+            do {
+                Socket socket = null;
+                RemotePeerInfo peer = iter.next();
+                try {
+                    LogHelper.getLogger().debug(" Initializing the Connection from peer:"+ peerId+ " to peer: " + peer.getPeerId()+ " (" + peer._peerAddress + ":" + peer.getPort() + ")");
+                    socket = new Socket(peer._peerAddress, peer.getPort());
+                    if (addConnHandler(new ConnectionHandler(peerId, true, peer.getPeerId(),socket, fileManager, peerManager))) {
+                        iter.remove();
+                        LogHelper.getLogger().debug(" Connected to peer: " + peer.getPeerId()
+                                + " (" + peer._peerAddress + ":" + peer.getPort() + ")");
+
+                    }
+                }
+                catch (ConnectException ex) {
+                    LogHelper.getLogger().warning("could not connect to peer " + peer.getPeerId()
+                            + " at address " + peer._peerAddress + ":" + peer.getPort());
+                    if (socket != null) {
+                        try {
+                            socket.close();
+                        } catch (IOException ex1)
+                        {}
+                    }
+                }
+                catch (IOException ex) {
+                    if (socket != null) {
+                        try {
+                            socket.close();
+                        } catch (IOException ex1)
+                        {}
+                    }
+                    LogHelper.getLogger().warning(ex);
+                }
+            }
+            while (iter.hasNext());
+
+            // Keep trying until they all connect
+            iter = peersToConnectTo.iterator();
+            try {
+                Thread.sleep(5);
+            } catch (InterruptedException ex) {
+            }
+        }
+    }
+
+    @Override
+    public void neighborsCompletedDownload() {
+        LogHelper.getLogger().debug("all peers completed download");
+        _peersFileCompleted.set(true);
+        if (_fileCompleted.get() && _peersFileCompleted.get()) {
+            // The process can quit
+            _terminate.set(true);
+            System.exit(0);
+        }
+    }
+
+    @Override
+    public synchronized void fileCompleted() {
+        LogHelper.getLogger().debug("local peer completed download");
+        ftupdateLogger.fileDownloadedMessage();
+        _fileCompleted.set(true);
+        if (_fileCompleted.get() && _peersFileCompleted.get()) {
+            // The process can quit
+            _terminate.set(true);
+            System.exit(0);
+        }
+    }
+
+    @Override
+    public synchronized void pieceArrived(int partIdx) {
+        for (ConnectionHandler connHanlder : _connHandlers) {
+            connHanlder.send(new Have(partIdx));
+            if (!peerManager.isInteresting(connHanlder.getRemotePeerId(), fileManager.getReceivedParts())) {
+                connHanlder.send(new NotInterested());
+            }
+        }
+    }
+
+    private synchronized boolean addConnHandler(ConnectionHandler connHandler) {
+        if (!_connHandlers.contains(connHandler)) {
+            _connHandlers.add(connHandler);
+            new Thread(connHandler).start();
+            try {
+                wait(10);
+            } catch (InterruptedException e) {
+                LogHelper.getLogger().warning(e);
+            }
+
+        }
+        else {
+            LogHelper.getLogger().debug("Peer " + connHandler.getRemotePeerId() + " is trying to connect but a connection already exists");
+        }
+        return true;
+    }
+
+    @Override
+    public synchronized void chockedPeers(Collection<Integer> chokedPeersIds) {
+        for (ConnectionHandler ch : _connHandlers) {
+            if (chokedPeersIds.contains(ch.getRemotePeerId())) {
+                LogHelper.getLogger().debug("Choking " + ch.getRemotePeerId());
+                ch.send(new Choke());
+            }
+        }
+    }
+
+    @Override
+    public synchronized void unchockedPeers(Collection<Integer> unchokedPeersIds) {
+        for (ConnectionHandler ch : _connHandlers) {
+            if (unchokedPeersIds.contains(ch.getRemotePeerId())) {
+                LogHelper.getLogger().debug("Unchoking " + ch.getRemotePeerId());
+                ch.send(new Unchoke());
+            }
+        }
+    }
+}

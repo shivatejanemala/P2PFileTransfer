@@ -1,0 +1,134 @@
+package peerProcessPackage;
+
+import peerProcessPackage.log.FileTransferUpdateLogger;
+import peerProcessPackage.log.LoggerConfiguration;
+import peerProcessPackage.messages.BitfieldMessage;
+import peerProcessPackage.messages.HandshakeMessage;
+import peerProcessPackage.messages.HaveMessage;
+import peerProcessPackage.messages.InterestedMessage;
+import peerProcessPackage.messages.NotInterestedMessage;
+import peerProcessPackage.messages.PeerMessage;
+import peerProcessPackage.messages.PieceMessage;
+import peerProcessPackage.messages.RequestMessage;
+
+import java.util.BitSet;
+
+
+public class MessageHandler {
+
+    private boolean isChokedByOtherPeer;
+    private final int otherPeerId;
+    private final FileManager fileManager;
+    private final PeerManager peerManager;
+    private final FileTransferUpdateLogger ftupdateLogger;
+
+    MessageHandler(int remotePeerId, FileManager fileManager, PeerManager peerManager, FileTransferUpdateLogger ftupdateLogger) {
+    	this.isChokedByOtherPeer = true;
+        this.fileManager = fileManager;
+        this.peerManager = peerManager;
+        this.otherPeerId = remotePeerId;
+        this.ftupdateLogger = ftupdateLogger;
+    }
+/**
+ * Function used to handle the Handshake message received from peer
+ * @param HandshakeMessage
+ * 
+ */
+    public PeerMessage handleHandShakeMsgFromPeer(HandshakeMessage handshake) {
+        BitSet bitset = fileManager.getReceivedParts();
+        if (!bitset.isEmpty()) {
+            return (new BitfieldMessage(bitset));
+        }
+        return null;
+    }
+    
+    /**
+     * Function used to handle the actual message received from peer
+     * @param HandshakeMessage
+     * 
+     */
+    public PeerMessage handleActualMsgFromPeer(PeerMessage msg) {
+        switch (msg.getType()) {
+            case Choke: { // operations to do when "CHOKE" is received
+                isChokedByOtherPeer = true;
+                ftupdateLogger.chokeMessageLog(otherPeerId);
+                return null;
+            }
+            case Unchoke: {// operations to do when "UNCHOKE" is received
+                isChokedByOtherPeer = false;
+                ftupdateLogger.unchokeMessageLog(otherPeerId);                
+                return requestPiece();
+            }
+            case Interested: { // operations to do when "INTERESTED" is received
+                ftupdateLogger.interestedMessage(otherPeerId);
+                peerManager.addInterestedPeer(otherPeerId);
+                return null;
+            }
+            case NotInterested: { // operations to do when "NOT INTERESTED" is received
+                ftupdateLogger.notInterestedMessage(otherPeerId);
+                peerManager.removeInterestPeer(otherPeerId);
+                peerManager.neighborsCompletedDownload();
+                return null;
+            }
+            case Have: { // operations to do when "HAVE" is received
+                HaveMessage have = (HaveMessage) msg;
+                final int pieceId = have.getPieceIndex();
+                ftupdateLogger.haveMsgLog(otherPeerId, pieceId);
+                peerManager.haveArrived(otherPeerId, pieceId);
+
+                if (fileManager.getReceivedParts().get(pieceId)) {
+                    return new NotInterestedMessage();
+                } else {
+                    return new InterestedMessage();
+                }
+            }
+            case BitField: { // operations to do when "BITFIELD" is received after handshake
+                BitfieldMessage bitfield = (BitfieldMessage) msg;
+                BitSet bitset = bitfield.getBitSet();
+                peerManager.bitfieldArrived(otherPeerId, bitset);
+
+                bitset.andNot(fileManager.getReceivedParts());
+                if (bitset.isEmpty()) {
+                    return new NotInterestedMessage();
+                } else {
+                    // the peer has parts that this peer does not have
+                    return new InterestedMessage();
+                }
+            }
+            case Request: { // operations to do when "REQUEST" is received 
+                RequestMessage request = (RequestMessage) msg;
+                if (peerManager.isPeerEnabledForTransmit(otherPeerId)) {
+                    byte[] piece = fileManager.getPiece(request.getPieceIndex());
+                    if (piece != null) {
+                        return new PieceMessage(request.getPieceIndex(), piece);
+                    }
+                }
+                return null;
+            }
+            case Piece: { // operations to do when "PIECE" is received 
+                PieceMessage piece = (PieceMessage) msg;
+                fileManager.addPiece(piece.getPieceIndex(), piece.getMsgContent());
+                peerManager.receivedPart(otherPeerId, piece.getMsgContent().length);
+                ftupdateLogger.pieceDownloadedMessage(otherPeerId, piece.getPieceIndex(), fileManager.getNumberOfReceivedParts());
+                return requestPiece();
+            }
+        }
+
+        return null;
+    }
+
+    private PeerMessage requestPiece() {
+        if (!isChokedByOtherPeer) {
+            int partId = fileManager.determinePieceToBeRequested(peerManager.getReceivedParts(otherPeerId));
+            if (partId >= 0) {
+                LoggerConfiguration.getLogger().debug("Requesting part " + partId + " to " + otherPeerId);
+                return new RequestMessage (partId);
+            }
+            else {
+                LoggerConfiguration.getLogger().debug("No parts can be requested to " + otherPeerId);
+            }
+        } 
+        return null;
+    }
+}
+

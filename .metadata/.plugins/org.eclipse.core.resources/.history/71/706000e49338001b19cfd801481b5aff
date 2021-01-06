@@ -1,0 +1,124 @@
+package edu.ufl.cise.cnt5106c;
+
+import edu.ufl.cise.cnt5106c.conf.CommonProperties;
+import edu.ufl.cise.cnt5106c.conf.PeerInfo;
+import edu.ufl.cise.cnt5106c.conf.PeerInfoDAO;
+import edu.ufl.cise.cnt5106c.log.LogHelper;
+
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.Reader;
+import java.text.ParseException;
+import java.util.Collection;
+import java.util.LinkedList;
+import java.util.Properties;
+
+/**
+ *
+ * @author Giacomo Benincasa    (giacomo@cise.ufl.edu)
+ */
+public class peerProcess {
+
+	private static int peerId = 0; // Maintains the peerId of the peer
+	private static int portNo = 0; // Maintains the port Number of the peer to which others need to be connected
+	private static String ipAddr = "localhost"; // Maintains the ipAddr of the peer to which others need to be connected
+	public static final String COMMON_FILE_NAME = "Common.cfg";
+    private static final String COMMENT_KEYWORD = "#";
+    
+    public static void main (String[] args) throws Exception {
+        if (args.length != 1) {
+            LogHelper.getLogger().severe("Not Enough Arguments are provided:"+ args.length+". Please provide Peer Id for the process. ");
+            throw new Exception("Not Enough Arguments are provided.Number of Arguments given:"+ args.length+". Please provide Peer Id for the process. ");
+        }
+        peerId  = Integer.parseInt(args[0]);
+        LogHelper.configure(peerId); // Configuration of log file and logger properties
+        boolean hasFile = false;
+
+        // Read properties
+        Reader commonPropReader = null; // Reader object Used to read the common properties
+        Reader peerInfoReader = null; // Reader object Used to read the peerInfo properties
+        Properties commonProperties = null; // Properties of Common.cfg maintained 
+        PeerInfo peerInfo = new PeerInfo(); // Properties of peerInfo.cfg maintained 
+        Collection<PeerInfoDAO> peersToBeConnected = new LinkedList<>(); // List of peers that need to be connected
+        try {
+            commonPropReader = new FileReader (COMMON_FILE_NAME);
+            peerInfoReader = new FileReader (PeerInfo.CONFIG_FILE_NAME);
+            commonProperties = readCommonProperties (commonPropReader);
+            peerInfo.read (peerInfoReader);
+            for (PeerInfoDAO peer : peerInfo.getPeerInfo()) {
+                if (peerId == peer.getPeerId()) {
+                    ipAddr = peer.getPeerAddress();
+                    portNo = peer.getPort();
+                    hasFile = peer.hasFile();
+                    break; // Stopping since it can be only be connected to existing peers. Peers greater than peerId are not instantiated yet
+                }
+                else { 
+                    peersToBeConnected.add (peer);
+                    LogHelper.getLogger().conf ("Read configuration for peer: " + peer);
+                }
+            }
+        }
+        catch (Exception ex) {
+            LogHelper.getLogger().severe (ex);
+            return;
+        }
+        finally {
+            try { commonPropReader.close(); }
+            catch (Exception e) {}
+            try { peerInfoReader.close(); }
+            catch (Exception e) {}
+        }
+
+        FileTransferProcess fileTransferProcess = new FileTransferProcess (peerId, ipAddr, portNo, hasFile, peerInfo.getPeerInfo(), commonProperties); // instantiates the File Transfer process object used for peer-to-peer transfer
+        fileTransferProcess.initializeManagers();
+        Thread t = new Thread (fileTransferProcess); // Creating a thread to handle the operations of the peer to peer file transfer and communication between threads are handled in it
+        t.setName ("PeerProcess-" + peerId);
+        t.start();
+
+        LogHelper.getLogger().debug ("Initializing the connections to existing " + peersToBeConnected.size() + " peers.");
+        fileTransferProcess.initializeConnectionToPeers (peersToBeConnected);
+        try {
+            Thread.sleep(5);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+    
+    public static Properties readCommonProperties (Reader reader) throws Exception {
+
+        final Properties conf = new Properties() {
+            @Override
+            public synchronized void load(Reader reader)
+                    throws IOException {
+                BufferedReader in = new BufferedReader(reader);
+                int i = 0;
+                for (String line; (line = in.readLine()) != null; i++) {
+                    line = line.trim();
+                    if ((line.length() <= 0) || (line.startsWith (COMMENT_KEYWORD))) {
+                        continue;
+                    }
+                    // The defaul Properties class uses the '=' character to
+                    // separate keys and value, while the project description
+                    // requires keys and values being separated by a space.
+                    String[] tokens = line.split("\\s+");
+                    if (tokens.length != 2) {
+                        throw new IOException (new ParseException (line, i));
+                    }
+                    setProperty(tokens[0].trim(), tokens[1].trim());
+                }
+            }
+        };
+
+        conf.load (reader);
+
+        // Check the config file contains all the needed properties
+        for (CommonProperties prop : CommonProperties.values()) {
+            if (!conf.containsKey(prop.toString())) {
+                throw new Exception ("config file does not contain property " + prop);
+            }
+        }
+
+        return conf;
+    }
+}

@@ -1,0 +1,12 @@
+package edu.ufl.cise.cnt5106c.conf;
+
+
+public enum CommonProperties {
+
+    NumberOfPreferredNeighbors,
+    UnchokingInterval,
+    OptimisticUnchokingInterval,
+    FileName,
+    FileSize,
+    PieceSize;    
+}

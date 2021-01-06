@@ -1,0 +1,13 @@
+package edu.ufl.cise.cnt5106c.messages;
+
+
+public class HaveMessage extends MessageWithPayload {
+
+    HaveMessage (byte[] pieceIdx) {
+        super (MessageType.Have, pieceIdx);
+    }
+
+    public HaveMessage (int pieceIdx) {
+        this (getPieceIndexBytes (pieceIdx));
+    }
+}

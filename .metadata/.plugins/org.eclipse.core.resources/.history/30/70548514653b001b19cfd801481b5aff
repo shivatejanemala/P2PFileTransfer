@@ -1,0 +1,9 @@
+package edu.ufl.cise.cnt5106c.messages;
+
+
+public class UnchokeMessage extends PeerMessage {
+
+    public UnchokeMessage() {
+        super (MessageType.Unchoke);
+    }
+}

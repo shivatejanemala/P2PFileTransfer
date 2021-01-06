@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<qualifiedTypeNameHistroy>
+<fullyQualifiedTypeName name="peerProcessPackage.InitializeRemotePeers"/>
+<fullyQualifiedTypeName name="java.io.BufferedReader"/>
+<fullyQualifiedTypeName name="java.io.Reader"/>
+<fullyQualifiedTypeName name="java.io.FileReader"/>
+<fullyQualifiedTypeName name="org.apache.log4j.Logger"/>
+<fullyQualifiedTypeName name="peerProcessPackage.CommonConfigurationProperties"/>
+<fullyQualifiedTypeName name="peerProcessPackage.CommonConfigurationDAO"/>
+<fullyQualifiedTypeName name="java.util.HashMap"/>
+<fullyQualifiedTypeName name="java.util.Set"/>
+<fullyQualifiedTypeName name="java.util.Iterator"/>
+<fullyQualifiedTypeName name="peerProcessPackage.PeerListener"/>
+<fullyQualifiedTypeName name="java.util.Date"/>
+<fullyQualifiedTypeName name="java.io.OutputStream"/>
+<fullyQualifiedTypeName name="java.sql.Savepoint"/>
+<fullyQualifiedTypeName name="peerProcessPackage.HandShakeMessage"/>
+<fullyQualifiedTypeName name="peerProcessPackage.DataMesssageConstants"/>
+<fullyQualifiedTypeName name="peerProcessPackage.BitField"/>
+<fullyQualifiedTypeName name="peerProcessPackage.PeerProcess"/>
+<fullyQualifiedTypeName name="peerProcessPackage.DataMessageConstants"/>
+</qualifiedTypeNameHistroy>

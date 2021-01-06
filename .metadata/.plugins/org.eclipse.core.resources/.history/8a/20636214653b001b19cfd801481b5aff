@@ -1,0 +1,9 @@
+package edu.ufl.cise.cnt5106c.messages;
+
+
+public class InterestedMessage  extends PeerMessage {
+
+    public InterestedMessage() {
+        super (MessageType.Interested);
+    }
+}

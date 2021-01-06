@@ -1,0 +1,53 @@
+package edu.ufl.cise.cnt5106c;
+
+import edu.ufl.cise.cnt5106c.log.LogHelper;
+import java.util.BitSet;
+
+
+public class RequestedParts {
+    private final BitSet requestedParts;
+    private final long timeout;
+
+    RequestedParts (int nParts, long unchokingInterval) {
+        requestedParts = new BitSet (nParts);
+        timeout = unchokingInterval * 2;
+    }
+
+    /**
+     * @param requestabableParts
+     * @return Index of the piece to be requested
+     */
+    synchronized int getPartToRequest(BitSet requestabableParts) {
+        requestabableParts.andNot(requestedParts);
+        if (!requestabableParts.isEmpty()) {
+            final int pieceIndex = getRandomIndex(requestabableParts);
+            requestedParts.set(pieceIndex);
+
+            // In case of timeout, determine that the piece hasn't been received and remove the pieceIndex from bitset
+            new java.util.Timer().schedule(
+                new java.util.TimerTask() {
+                    @Override
+                    public void run() {
+                        synchronized (requestedParts) {
+                            requestedParts.clear(pieceIndex);
+                            LogHelper.getLogger().debug("clearing requested parts for pert " + pieceIndex);
+                        }
+                    }
+                }, 
+                timeout 
+            );
+            return pieceIndex;
+        }
+        return -1;
+    }
+    
+    public static int getRandomIndex (BitSet bitset) {
+        if (bitset.isEmpty()) {
+            throw new RuntimeException ("Empty Bit Set. Couldnt choose a piece index for request");
+        }
+        // Retrieving a random index from the bit set
+        String set = bitset.toString(); 
+        String[] pieceIndexes = set.substring(1, set.length()-1).split(",");
+        return Integer.parseInt(pieceIndexes[(int)(Math.random()*(pieceIndexes.length-1))].trim());
+    }
+}

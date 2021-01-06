@@ -1,0 +1,327 @@
+package peerProcessPackage;
+
+import peerProcessPackage.configuration.CommonProperties;
+import peerProcessPackage.configuration.PeerInfoDAO;
+import peerProcessPackage.log.FileTransferUpdateLogger;
+import peerProcessPackage.log.LoggerConfiguration;
+
+import java.util.ArrayList;
+import java.util.BitSet;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Properties;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+
+public class PeerManager implements Runnable {
+
+	    private final int noOfPreferredNeighbours;//_numberOfPreferredNeighbors
+    private final int unchokingInterval;
+    private final int noOfPieces; // Number of pieces needed for the complete file
+    private final FileTransferUpdateLogger logger;
+    private final List<PeerInfoDAO> peerList = new ArrayList<>(); // List containing the peers in the network
+    private final Collection<PeerInfoDAO> preferredPeersList = new HashSet<>(); // List containing the preferred peers for this peer
+    private final DetermineOptimisticUnchoker determineOptimisticUnchoker; // Class which determines the peer for OptimisticUnchokingInterval 
+    private final Collection<PeerManagerListenerInterface> peerManagerlistenersList = new LinkedList<>();
+    private boolean neighborsCompletedDownload = false;
+    
+    PeerManager(int peerId, Collection<PeerInfoDAO> peers, int bitmapsize, Properties properties) {
+        peerList.addAll(peers);
+        noOfPreferredNeighbours = Integer.parseInt(properties.getProperty(CommonProperties.NumberOfPreferredNeighbors.toString()));
+        unchokingInterval = Integer.parseInt(properties.getProperty(CommonProperties.UnchokingInterval.toString())) * 1000;
+        determineOptimisticUnchoker = new DetermineOptimisticUnchoker(properties);
+        noOfPieces = bitmapsize;
+        logger = new FileTransferUpdateLogger (peerId);
+    }
+
+    
+    long getUnchokingInterval() {
+        return unchokingInterval;
+    }
+    
+    /*
+     * Function which handles when a peer is "Interested"
+     * 
+     */
+    synchronized void addInterestedPeer(int remotePeerId) {
+        PeerInfoDAO remotePeer = findPeer(remotePeerId);
+        if (remotePeer != null) {
+            remotePeer.setInterested();
+        }
+    }
+    
+    /*
+     * Function which handles when a peer is "Not Interested"
+     * 
+     */
+    synchronized void removeInterestPeer(int remotePeerId) {
+        PeerInfoDAO remotePeer = findPeer(remotePeerId);
+        if (remotePeer != null) {
+            remotePeer.setNotIterested();
+        }
+    }
+
+    /*
+     * Function which returns all the interested peers
+     * 
+     */
+    synchronized List<PeerInfoDAO> getInterestedPeers() {
+        ArrayList<PeerInfoDAO> interestedPeersList = new ArrayList<>();
+        for (PeerInfoDAO peer : peerList){
+            if(peer.isInterested()){
+                interestedPeersList.add(peer);
+            }
+        }
+        return interestedPeersList;
+    }
+    
+    /*
+     * Function which lets know whether it is interested in other peers
+     * 
+     */
+    synchronized boolean isInteresting(int peerId, BitSet bitset) {
+        PeerInfoDAO peer  = findPeer(peerId);
+        if (peer != null) {
+            BitSet pBitset = (BitSet) peer.receivedParts.clone();
+            pBitset.andNot(bitset);
+            return ! pBitset.isEmpty();
+        }
+        return false;
+    }
+
+    /*
+     * Function which is called after a piece after a piece has been received
+     * 
+     */
+    synchronized void receivedPart(int peerId, int noOfBytesReceived) {
+        PeerInfoDAO peer  = findPeer(peerId);
+        if (peer != null) {
+            peer.noOfBytesDownloaded.addAndGet(noOfBytesReceived);
+        }
+    }
+
+    /*
+     * Function which returns true if the peer is unchoked during either  UnchokingInterval or OptimisticUnchokingInterval
+     * 
+     */
+    synchronized boolean isPeerAllowedForTranmit(int peerId) {
+        PeerInfoDAO peerInfo = new PeerInfoDAO(peerId);
+        return (preferredPeersList.contains(peerInfo) ||determineOptimisticUnchoker.optmisticallyUnchokedPeers.contains(peerInfo));
+    }
+
+  
+    /*
+     * Function which is invoked when BitField message is received from a peer
+     * 
+     */
+    synchronized void bitfieldArrived(int peerId, BitSet bitfield) {
+        PeerInfoDAO peer  = findPeer(peerId);
+        if (peer != null) {
+            peer.receivedParts = bitfield;
+        }
+        neighborsCompletedDownload();
+    }
+
+    /*
+     * Function which is invoked when HAVE message is received from a peer
+     * 
+     */
+    synchronized void haveArrived(int peerId, int partId) {
+        PeerInfoDAO peer  = findPeer(peerId);
+        if (peer != null) {
+            peer.receivedParts.set(partId);
+        }
+        neighborsCompletedDownload();
+    }
+    /*
+     * Function which provides which piece to be be requested
+     * 
+     */
+    synchronized BitSet getReceivedParts(int peerId) {
+        PeerInfoDAO peer  = findPeer(peerId);
+        if (peer != null) {
+            return (BitSet) peer.receivedParts.clone();
+        }
+        return new BitSet();  // empry bit set
+    }
+    /*
+     * Function which is invoked for retrieving the peer from the peerId
+     * 
+     */
+    synchronized private PeerInfoDAO findPeer(int peerId) {
+        for (PeerInfoDAO peer : peerList) {
+            if (peer.getPeerId() == peerId) {
+                return peer;
+            }
+        }
+    return null;
+    }
+    /*
+     * Function which determines whether all the peers has received the complete file
+     * 
+     */
+    synchronized public void neighborsCompletedDownload() {
+        for (PeerInfoDAO peer : peerList) {
+            if ((!peer.hasFile) && peer.receivedParts.cardinality() < noOfPieces) {
+                LoggerConfiguration.getLogger().debug("Peer " + peer.getPeerId() + " has not completed yet");
+                return;
+            }
+        }
+        this.neighborsCompletedDownload = true;
+        for (PeerManagerListenerInterface listener : peerManagerlistenersList) {
+            listener.isNeighbourFileDownloadComplete();
+        }
+    }
+    /*
+     * Function which sets the peerManagerListener for the peerManager
+     * 
+     */
+    public synchronized void registerListener(PeerManagerListenerInterface listener) {
+        peerManagerlistenersList.add(listener);
+    }
+
+    @Override
+    public void run() {
+
+        determineOptimisticUnchoker.start(); // Starts the cycle for OptimisticallyUnchokedInterval
+
+        while (true) {
+            try {
+                Thread.sleep(unchokingInterval);
+            } catch (InterruptedException ex) {
+            }
+
+            List<PeerInfoDAO> interestedPeers = getInterestedPeers(); // Retrieves the interestedPeers after unchokingInterval
+
+            // Sorting the list of interested peers in decreasing order by the number of bytes downloaded between 2 consecutive unchokingInterval periods
+            Collections.sort(interestedPeers, new Comparator() {
+                @Override
+                public int compare(Object o1, Object o2) {
+                    PeerInfoDAO peerInfo1 = (PeerInfoDAO) (o1);
+                    PeerInfoDAO peerInfo2 = (PeerInfoDAO) (o2);
+                    return (peerInfo2.noOfBytesDownloaded.get() - peerInfo1.noOfBytesDownloaded.get());
+                }
+            });
+        
+
+            Collection<PeerInfoDAO> optUnchokablePeers = null;
+
+            Collection<Integer> chokedPeersSet = new HashSet<>();
+            Collection<Integer> preferredNeighborsIDs = new HashSet<>();
+            Map<Integer, Long> downloadedBytes = new HashMap<>();
+
+            synchronized (this) {
+                // Resetting the bytes downloaded variable after sorting the interested peers                
+                for (PeerInfoDAO peer : peerList) {
+                    downloadedBytes.put (peer.getPeerId(), peer.noOfBytesDownloaded.longValue());
+                    peer.noOfBytesDownloaded.set(0);
+                }
+
+           // Creating a list of preferred neighbours by taking the sub set of interested peers with highest noOfBytesDownloaded
+                preferredPeersList.clear();
+                preferredPeersList.addAll(interestedPeers.subList(0, Math.min(noOfPreferredNeighbours, interestedPeers.size())));
+                if (preferredPeersList.size() > 0) {
+                    logger.changeOfPrefereedNeighbors(LoggerConfiguration.getPeerIdsAsString (preferredPeersList));
+                }
+
+         // Setting the remaining peers in the interested peers list to choke
+                Collection<PeerInfoDAO> chokedPeerList = new LinkedList<>(peerList);
+                chokedPeerList.removeAll(preferredPeersList);
+                chokedPeersSet.addAll(PeerInfoDAO.toIdSet(chokedPeerList));
+
+                // Creating the OptimallyunchokablePeers
+                if (noOfPreferredNeighbours >= interestedPeers.size()) {
+                    optUnchokablePeers = new ArrayList<>();
+                }
+                else {
+                    optUnchokablePeers = interestedPeers.subList(noOfPreferredNeighbours, interestedPeers.size());
+                }
+
+                preferredNeighborsIDs.addAll (PeerInfoDAO.toIdSet(preferredPeersList));
+            }
+
+            // debug
+            LoggerConfiguration.getLogger().debug("STATE: INTERESTED:" + LoggerConfiguration.getPeerIdsAsString (interestedPeers));
+            LoggerConfiguration.getLogger().debug("STATE: UNCHOKED (" + noOfPreferredNeighbours + "):" + LoggerConfiguration.getPeerIdsAsString2 (preferredNeighborsIDs));
+            LoggerConfiguration.getLogger().debug("STATE: CHOKED:" + LoggerConfiguration.getPeerIdsAsString2 (chokedPeersSet));
+            
+            for (Entry<Integer,Long> entry : downloadedBytes.entrySet()) {
+                String PREFERRED = preferredNeighborsIDs.contains(entry.getKey()) ? " *" : "";
+                LoggerConfiguration.getLogger().debug("BYTES DOWNLOADED FROM  PEER " + entry.getKey() + ": "
+                        + entry.getValue() + " (INTERESTED PEERS: "
+                        + interestedPeers.size()+ ": " + LoggerConfiguration.getPeerIdsAsString (interestedPeers)
+                        + ")\t" + PREFERRED);
+            }
+
+            // Send CHOKE and UNCHOKE message to their respective peers
+
+            for (PeerManagerListenerInterface listener : peerManagerlistenersList) {
+                listener.chockedPeers(chokedPeersSet);
+                listener.unchockedPeers(preferredNeighborsIDs);
+            }
+            
+            // Set the peers to the optimistically unchoked thread 
+
+            if (optUnchokablePeers != null) {
+                determineOptimisticUnchoker.setChokedNeighbors(optUnchokablePeers);
+            }
+        }
+        
+    }
+    
+ // Class which helps in determining the peer to be unchoked during OptimisticUnchokingInterval
+    class DetermineOptimisticUnchoker extends Thread {
+        private final int noOfOptimisticallyUnchokedNeighbours;// Representing number of peers to be unchoked during OptimisticUnchokingInterval 
+        private final int optimisticUnchokingInterval;
+        private final List<PeerInfoDAO> chokedNeighboursList = new ArrayList<>(); // List representing the choked peers to be chosen during OptimisticUnchokingInterval
+        final Collection<PeerInfoDAO> optmisticallyUnchokedPeers = Collections.newSetFromMap(new ConcurrentHashMap<PeerInfoDAO, Boolean>()); // List to maintain the peer list which are unchoked during OptimisticUnchokingInterval
+
+        
+        DetermineOptimisticUnchoker(Properties properties) {
+            noOfOptimisticallyUnchokedNeighbours = 1;
+            optimisticUnchokingInterval = Integer.parseInt(properties.getProperty(CommonProperties.OptimisticUnchokingInterval.toString())) * 1000;
+        }
+
+        // Sets the choked variables so that the thread can know which peer list to be taken for OptimisticUnchokingInterval
+        synchronized void setChokedNeighbors(Collection<PeerInfoDAO> chokedNeighbors) {
+            chokedNeighboursList.clear();
+            chokedNeighboursList.addAll(chokedNeighbors);
+        }
+
+        @Override
+        public void run() {
+            while (true) {
+                try {
+                    Thread.sleep(optimisticUnchokingInterval);
+                } catch (InterruptedException ex) {
+                	LoggerConfiguration.getLogger().warning("Error while the thread is sleeping during OptimisticUnchokingInterval:-"+ ex);
+                }
+
+                synchronized (this) {
+                    // Randomly select a choked peer to UNCHOKE 
+                    if (!chokedNeighboursList.isEmpty()) {
+                        Collections.shuffle(chokedNeighboursList);
+                        optmisticallyUnchokedPeers.clear();
+                        optmisticallyUnchokedPeers.addAll(chokedNeighboursList.subList(0,Math.min(noOfOptimisticallyUnchokedNeighbours, chokedNeighboursList.size())));
+                    }
+                }
+
+                if (chokedNeighboursList.size() > 0) {
+                    LoggerConfiguration.getLogger().debug("STATE: OPT UNCHOKED(" + noOfOptimisticallyUnchokedNeighbours + "):" + LoggerConfiguration.getPeerIdsAsString (optmisticallyUnchokedPeers));
+                    logger.changeOfOptimisticallyUnchokedNeighbors(LoggerConfiguration.getPeerIdsAsString (optmisticallyUnchokedPeers));
+                }
+                for (PeerManagerListenerInterface listener : peerManagerlistenersList) {
+                    listener.unchockedPeers(PeerInfoDAO.toIdSet(optmisticallyUnchokedPeers));
+                }
+            }
+        }
+    }
+}

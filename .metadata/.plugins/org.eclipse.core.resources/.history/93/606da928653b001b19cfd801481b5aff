@@ -1,0 +1,45 @@
+package edu.ufl.cise.cnt5106c;
+
+import edu.ufl.cise.cnt5106c.io.CustomOutputStream;
+import peerProcessPackage.log.LoggerConfiguration;
+import peerProcessPackage.messages.PeerMessage;
+import peerProcessPackage.messages.RequestMessage;
+
+import java.io.IOException;
+import java.util.Collection;
+import java.util.TimerTask;
+
+public class RequestTimer extends TimerTask {
+    private final RequestMessage _request;
+    private final FileManager _fileMgr;
+    private final  CustomOutputStream _out;
+    private final int _remotePeerId;
+    private final PeerMessage _message;
+
+    RequestTimer (RequestMessage request, FileManager fileMgr, CustomOutputStream out, PeerMessage message, int remotePeerId) {
+        super();
+        _request = request;
+        _fileMgr = fileMgr;
+        _out = out;
+        _remotePeerId = remotePeerId;
+        _message = message;
+    }
+
+    @Override
+    public void run() {
+        if (_fileMgr.hasPart(_request.getPieceIndex())) {
+            LoggerConfiguration.getLogger().debug("Not rerequesting piece " + _request.getPieceIndex()
+                    + " to peer " + _remotePeerId);
+        }
+        else {
+            LoggerConfiguration.getLogger().debug("Rerequesting piece " + _request.getPieceIndex()
+                    + " to peer " + _remotePeerId);
+            try {
+                _out.writeObject(_message);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+        }
+    }
+}

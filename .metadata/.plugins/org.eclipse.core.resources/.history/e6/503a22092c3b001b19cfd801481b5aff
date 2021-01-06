@@ -1,0 +1,13 @@
+package edu.ufl.cise.cnt5106c.messages;
+
+
+public class RequestMessage extends ActualMessageOperations {
+
+    RequestMessage (byte[] pieceIndex) {
+        super (MessageType.Request, pieceIndex);
+    }
+
+    public RequestMessage (int pieceIndex) {
+        this (getPieceIndexBytes (pieceIndex));
+    }
+}

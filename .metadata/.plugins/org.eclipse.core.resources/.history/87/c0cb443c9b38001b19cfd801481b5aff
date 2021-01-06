@@ -1,0 +1,56 @@
+package edu.ufl.cise.cnt5106c;
+
+import edu.ufl.cise.cnt5106c.log.LogHelper;
+import java.util.BitSet;
+
+
+public class RequestedParts {
+    private final BitSet requestedParts;
+    private final long timeout;
+
+    RequestedParts (int nParts, long unchokingInterval) {
+        requestedParts = new BitSet (nParts);
+        timeout = unchokingInterval * 2;
+    }
+
+    /**
+     * @param requestabableParts
+     * @return the ID of the part to request, if any, or a negative number in
+     * case all the missing parts are already being requested or the file is
+     * complete.
+     */
+    synchronized int getPartToRequest(BitSet requestabableParts) {
+        requestabableParts.andNot(requestedParts);
+        if (!requestabableParts.isEmpty()) {
+            final int partId = pickRandomSetIndexFromBitSet(requestabableParts);
+            requestedParts.set(partId);
+
+            // Make the part requestable again in _timeoutInMillis
+            new java.util.Timer().schedule(
+                new java.util.TimerTask() {
+                    @Override
+                    public void run() {
+                        synchronized (requestedParts) {
+                            requestedParts.clear(partId);
+                            LogHelper.getLogger().debug("clearing requested parts for pert " + partId);
+                        }
+                    }
+                }, 
+                timeout 
+            );
+            return partId;
+        }
+        return -1;
+    }
+    
+    public static int pickRandomSetIndexFromBitSet (BitSet bitset) {
+        if (bitset.isEmpty()) {
+            throw new RuntimeException ("The bitset is empty, cannot find a set element");
+        }
+        // Generate list of set elements in the format that follows: { 2, 4, 5, ...}
+        String set = bitset.toString(); 
+        // Separate the elements, and pick one randomly
+        String[] indexes = set.substring(1, set.length()-1).split(",");
+        return Integer.parseInt(indexes[(int)(Math.random()*(indexes.length-1))].trim());
+    }
+}

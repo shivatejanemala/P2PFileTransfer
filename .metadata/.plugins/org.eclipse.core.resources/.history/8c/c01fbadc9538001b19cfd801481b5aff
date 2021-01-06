@@ -1,0 +1,130 @@
+package edu.ufl.cise.cnt5106c;
+
+import edu.ufl.cise.cnt5106c.conf.CommonProperties;
+import edu.ufl.cise.cnt5106c.file.Destination;
+import edu.ufl.cise.cnt5106c.log.LogHelper;
+
+import java.util.BitSet;
+import java.util.Collection;
+import java.util.LinkedList;
+import java.util.Properties;
+
+
+public class FileManager {
+
+    private BitSet _receivedParts;
+    private final Collection<FileManagerListener> _listeners = new LinkedList<>();
+    private Destination fileLocation;
+    private final double pieceSize;
+    private final int noOfPieces;
+    private final RequestedParts _partsBeingReq;
+
+    FileManager (int peerId, Properties properties) {
+
+    	this.fileLocation = new Destination(peerId, properties.getProperty (CommonProperties.FileName.toString()));
+    	this.pieceSize = Integer.parseInt(properties.getProperty(CommonProperties.PieceSize.toString()));
+    	this.noOfPieces = (int) Math.ceil (Integer.parseInt(properties.getProperty(CommonProperties.FileSize.toString()))/pieceSize);
+    	this._receivedParts = new BitSet(noOfPieces);
+    	this._partsBeingReq = new RequestedParts(noOfPieces, Integer.parseInt(properties.getProperty(CommonProperties.UnchokingInterval.toString())) * 1000);
+    	
+    }
+
+   
+    FileManager (int peerId, String fileName, int fileSize, int partSize, long unchokingInterval) {
+        pieceSize = partSize;
+        noOfPieces = (int) Math.ceil (fileSize/pieceSize);
+        LogHelper.getLogger().debug ("File size set to " + fileSize +  "\tPart size set to " + pieceSize + "\tBitset size set to " + noOfPieces);
+        _receivedParts = new BitSet (noOfPieces);
+        _partsBeingReq = new RequestedParts (noOfPieces, unchokingInterval);
+        fileLocation = new Destination(peerId, fileName);
+    }
+
+    /**
+     *
+     * @param partIdx
+     * @param part
+     */
+    public synchronized void addPart (int partIdx, byte[] part) {
+        
+        // TODO: write part on file, at the specified directroy
+        final boolean isNewPiece = !_receivedParts.get(partIdx);
+        _receivedParts.set (partIdx);
+
+        if (isNewPiece) {
+            fileLocation.writeByteArrayAsFilePart(part, partIdx);
+            for (FileManagerListener listener : _listeners) {
+                listener.isPieceArrived (partIdx);
+            }
+        }
+        if (isFileCompleted()) {
+            fileLocation.mergeFile(_receivedParts.cardinality());
+            for (FileManagerListener listener : _listeners) {
+                listener.isFileDownloadComplete();
+            }
+        }
+    }
+
+    /**
+     * @param availableParts parts that are available at the remote peer
+     * @return the ID of the part to request, if any, or a negative number in
+     * case all the missing parts are already being requested or the file is
+     * complete.
+     */
+    synchronized int getPartToRequest(BitSet availableParts) {
+        availableParts.andNot(getReceivedParts());
+        return _partsBeingReq.getPartToRequest (availableParts);
+    }
+
+    public synchronized BitSet getReceivedParts () {
+        return (BitSet) _receivedParts.clone();
+    }
+
+    synchronized public boolean hasPart(int pieceIndex) {
+        return _receivedParts.get(pieceIndex);
+    }
+
+    /**
+     * Set all parts as received.
+     */
+    public synchronized void setAllParts()
+    {
+        for (int i = 0; i < noOfPieces; i++) {
+            _receivedParts.set(i, true);
+        }
+        LogHelper.getLogger().debug("Received parts set to: " + _receivedParts.toString());
+    }
+
+    public synchronized int getNumberOfReceivedParts() {
+        return _receivedParts.cardinality();
+    }
+
+    byte[] getPiece (int partId) {
+        byte[] piece = fileLocation.getPartAsByteArray(partId);
+        return piece;
+    }
+
+    public void registerListener (FileManagerListener listener) {
+        _listeners.add (listener);
+    }
+
+    public void splitFile(){
+        fileLocation.splitFile((int) pieceSize);
+    }
+
+    public byte[][] getAllPieces(){
+        return fileLocation.getAllPartsAsByteArrays();
+    }
+
+    public int getBitmapSize() {
+        return noOfPieces;
+    }
+
+    private boolean isFileCompleted() {
+        for (int i = 0; i < noOfPieces; i++) {
+            if (!_receivedParts.get(i)) {
+                return false;
+            }
+        }
+        return true;
+    }
+}

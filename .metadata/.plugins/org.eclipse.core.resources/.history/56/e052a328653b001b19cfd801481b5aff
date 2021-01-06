@@ -1,0 +1,80 @@
+package peerProcessPackage.messages;
+
+import edu.ufl.cise.cnt5106c.io.CustomStreamInterface;
+import peerProcessPackage.log.LoggerConfiguration;
+
+import java.io.IOException;
+
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+
+public class PeerMessage implements CustomStreamInterface  {
+
+    private int msgLength;
+    private final MessageType msgType;
+    protected byte[] msgPayLoad;
+
+    protected PeerMessage (MessageType type) {
+        this (type, null);
+    }
+
+    protected PeerMessage (MessageType type, byte[] payload) {
+        msgLength = (payload == null ? 0 : payload.length)
+                + 1; // for the _type
+        msgType = type;
+        msgPayLoad = payload;
+    }
+
+    public MessageType getType() {
+        return msgType;
+    }
+
+   
+
+    @Override
+    public void write (DataOutputStream out) throws IOException {
+        out.writeInt (msgLength);
+        out.writeByte (msgType.getValue());
+        if ((msgPayLoad != null) && (msgPayLoad.length > 0)) {
+            out.write (msgPayLoad, 0, msgPayLoad.length);
+        }
+    }
+    
+    public static PeerMessage getNewMessageObject (int length, MessageType type) throws ClassNotFoundException {
+        switch (type) {
+            case Choke:
+                return new ChokeMessage();
+
+            case Unchoke:
+                return new UnchokeMessage();
+
+            case Interested:
+                return new InterestedMessage();
+
+            case NotInterested:
+                return new NotInterestedMessage();
+
+            case Have:
+                return new HaveMessage (new byte[length]);
+
+            case BitField:
+                return new BitfieldMessage (new byte[length]);
+
+            case Request:
+                return new RequestMessage (new byte[length]);
+
+            case Piece:
+                return new PieceMessage (new byte[length]);
+
+            default:
+                throw new ClassNotFoundException ("Incorrect message type provided: " + type.toString());
+        }
+    }
+    @Override
+    public void read (DataInputStream in) throws IOException {
+        if ((msgPayLoad != null) && (msgPayLoad.length) > 0) {
+            in.readFully(msgPayLoad, 0, msgPayLoad.length);
+        }
+    }
+    
+}

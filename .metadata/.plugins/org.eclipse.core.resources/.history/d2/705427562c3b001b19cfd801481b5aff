@@ -1,0 +1,29 @@
+package edu.ufl.cise.cnt5106c.messages;
+
+import java.util.Arrays;
+
+
+public class PieceMessage extends ActualMessageOperations {
+
+    PieceMessage (byte[] msgPayLoad) {
+        super (MessageType.Piece, msgPayLoad);
+    }
+
+    public PieceMessage (int pieceIndex, byte[] msgContent) {
+        super (MessageType.Piece, join (pieceIndex, msgContent));
+    }
+
+    public byte[] getContent() {
+        if ((msgPayLoad == null) || (msgPayLoad.length <= 4)) {
+            return null;
+        }
+        return Arrays.copyOfRange(msgPayLoad, 4, msgPayLoad.length);
+    }
+
+    private static byte[] join (int pieceIndex, byte[] second) { 
+        byte[] concat = new byte[4 + (second == null ? 0 : second.length)];
+        System.arraycopy(getPieceIndexBytes (pieceIndex), 0, concat, 0, 4);
+        System.arraycopy(second, 0, concat, 4, second.length);
+        return concat;
+    }
+}

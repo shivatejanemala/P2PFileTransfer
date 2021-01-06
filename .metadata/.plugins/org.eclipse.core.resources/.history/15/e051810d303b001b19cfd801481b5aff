@@ -1,0 +1,78 @@
+package edu.ufl.cise.cnt5106c.io;
+
+import edu.ufl.cise.cnt5106c.messages.ChokeMessage;
+import edu.ufl.cise.cnt5106c.messages.Handshake;
+import edu.ufl.cise.cnt5106c.messages.PeerMessage;
+import edu.ufl.cise.cnt5106c.messages.PieceMessage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import org.junit.After;
+import org.junit.AfterClass;
+import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.Test;
+import static org.junit.Assert.*;
+
+/**
+ *
+ * @author Giacomo Benincasa    (giacomo@cise.ufl.edu)
+ */
+public class ProtocolazibleObjectInputStreamTest {
+    
+    public ProtocolazibleObjectInputStreamTest() {
+    }
+    
+    @BeforeClass
+    public static void setUpClass() {
+    }
+    
+    @AfterClass
+    public static void tearDownClass() {
+    }
+    
+    @Before
+    public void setUp() {
+    }
+    
+    @After
+    public void tearDown() {
+    }
+
+    private byte[] getPayload() {
+        byte[] payload = new byte[4];
+        for (int i = 0; i < payload.length; i++) {
+            payload[i] = 'a';
+        }
+        return payload;
+    }
+
+    /**
+     * Test of readObject method, of class ProtocolazibleObjectInputStream.
+     * @throws java.lang.Exception
+     */
+    @Test
+    public void testReadObject() throws Exception {
+        System.out.println("readObject");
+        
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream(2048);
+        ProtocolazibleObjectOutputStream out = new ProtocolazibleObjectOutputStream (bytes);
+
+        // Test Handshake
+        Handshake hs = new Handshake(10);
+        out.writeObject (hs);
+        PeerMessage choke = new ChokeMessage();
+        out.writeObject (choke);
+        PieceMessage piece = new PieceMessage (1, getPayload());
+        out.writeObject (piece);
+
+        // Read and Test
+        CustomInputStream in = new CustomInputStream (new ByteArrayInputStream (bytes.toByteArray()));
+        Handshake hResult = (Handshake) in.readObject();
+        assertEquals(hs.getPeerId(), hResult.getPeerId());
+        PeerMessage result = (PeerMessage) in.readObject();
+        assertEquals (choke.getType(), result.getType());
+        result = (PeerMessage) in.readObject();
+        assertEquals (piece.getType(), result.getType());
+        assertEquals (piece.getPieceIndex(), ((PieceMessage) result).getPieceIndex());
+    }
+}

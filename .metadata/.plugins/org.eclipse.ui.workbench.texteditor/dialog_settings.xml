@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<section name="Workbench">
+	<section name="org.eclipse.ui.texteditor.GotoLineAction$GotoLineDialog_dialogBounds">
+		<item value="452" key="DIALOG_X_ORIGIN"/>
+		<item value="247" key="DIALOG_Y_ORIGIN"/>
+	</section>
+	<section name="org.eclipse.ui.texteditor.FindReplaceDialog">
+		<item value="false" key="isRegEx"/>
+		<item value="java.util.logging.FileHandler.level" key="selection"/>
+		<item value="false" key="casesensitive"/>
+		<item value="false" key="incremental"/>
+		<item value="true" key="wrap"/>
+		<item value="false" key="wholeword"/>
+		<list key="findhistory">
+			<item value="java.util.logging.FileHandler.level"/>
+			<item value="java.util.logging.FileHandler.formatter"/>
+			<item value="_randomlySelectPreferred"/>
+			<item value="_bytesDownloadedFrom"/>
+			<item value="_unchokingInterval"/>
+			<item value="UnchokingInterval"/>
+			<item value="unchokingInterval"/>
+			<item value="dataRate"/>
+			<item value="updateBitField"/>
+			<item value="encode()"/>
+			<item value="encode"/>
+			<item value="peerprocess"/>
+			<item value="ownBitField"/>
+			<item value="bitfield"/>
+			<item value="connectedPeerMap"/>
+		</list>
+		<list key="replacehistory">
+			<item value="DataMesssageConstants.BITFIELD_MESSAGE_TYPE"/>
+			<item value="DataMesssageConstants."/>
+			<item value="DataMessageConstants.BITFIELD_MESSAGE_TYPE"/>
+			<item value="retrieveMsgFromQueue"/>
+			<item value="re"/>
+			<item value="messageHandler"/>
+			<item value="MessageHandler"/>
+			<item value="/"/>
+			<item value="1006"/>
+			<item value="1005"/>
+			<item value="1004"/>
+			<item value="1003"/>
+			<item value="1002"/>
+			<item value="1001"/>
+			<item value="peer6"/>
+		</list>
+	</section>
+	<section name="org.eclipse.ui.texteditor.FindReplaceDialog_dialogBounds">
+		<item value="284" key="DIALOG_WIDTH"/>
+		<item value="1|Segoe UI|9.0|0|WINDOWS|1|-12|0|0|0|400|0|0|0|1|0|0|0|0|Segoe UI" key="DIALOG_FONT_NAME"/>
+		<item value="391" key="DIALOG_HEIGHT"/>
+		<item value="892" key="DIALOG_X_ORIGIN"/>
+		<item value="425" key="DIALOG_Y_ORIGIN"/>
+	</section>
+</section>

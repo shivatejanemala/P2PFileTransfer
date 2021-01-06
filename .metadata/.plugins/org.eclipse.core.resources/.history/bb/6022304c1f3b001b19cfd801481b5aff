@@ -1,0 +1,22 @@
+package edu.ufl.cise.cnt5106c.messages;
+
+import java.util.BitSet;
+
+/**
+ *
+ * @author Giacomo Benincasa    (giacomo@cise.ufl.edu)
+ */
+public class Bitfield extends PeerMessage {
+
+    Bitfield (byte[] bitfield) {
+        super (MessageType.BitField, bitfield);
+    }
+
+    public Bitfield (BitSet bitset) {
+        super (MessageType.BitField, bitset.toByteArray());
+    }
+
+    public BitSet getBitSet() {
+        return BitSet.valueOf (_payload);
+    }
+}

@@ -1,0 +1,124 @@
+package peerProcessPackage;
+
+import peerProcessPackage.configuration.CommonProperties;
+import peerProcessPackage.configuration.PeerInfo;
+import peerProcessPackage.configuration.PeerInfoDAO;
+import peerProcessPackage.log.LoggerConfiguration;
+
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.Reader;
+import java.text.ParseException;
+import java.util.Collection;
+import java.util.LinkedList;
+import java.util.Properties;
+
+
+public class PeerProcess {
+
+	private static int peerId = 0; // Maintains the peerId of the peer
+	private static int portNo = 0; // Maintains the port Number of the peer to which others need to be connected
+	private static String ipAddr = "localhost"; // Maintains the ipAddr of the peer to which others need to be connected
+	public static final String COMMON_FILE_NAME = "Common.cfg";
+    private static final String COMMENT_KEYWORD = "#";
+    
+    public static void main (String[] args) throws Exception {
+        if (args.length != 1) {
+            LoggerConfiguration.getLogger().severe("Not Enough Arguments are provided:"+ args.length+". Please provide Peer Id for the process. ");
+            throw new Exception("Not Enough Arguments are provided.Number of Arguments given:"+ args.length+". Please provide Peer Id for the process. ");
+        }
+        peerId  = Integer.parseInt(args[0]);
+        LoggerConfiguration.configure(peerId); // Configuration of log file and logger properties
+        boolean hasFile = false;
+
+        // Read properties
+        Reader commonPropReader = null; // Reader object Used to read the common properties
+        Reader peerInfoReader = null; // Reader object Used to read the peerInfo properties
+        Properties commonProperties = null; // Properties of Common.cfg maintained 
+        PeerInfo peerInfo = new PeerInfo(); // Properties of peerInfo.cfg maintained 
+        Collection<PeerInfoDAO> peersToBeConnected = new LinkedList<>(); // List of peers that need to be connected
+        try {
+            commonPropReader = new FileReader (COMMON_FILE_NAME);
+            peerInfoReader = new FileReader (PeerInfo.CONFIG_FILE_NAME);
+            commonProperties = readCommonProperties (commonPropReader);
+            LoggerConfiguration.getLogger().info("Properties from Common.cfg are loaded sucessfully");
+            peerInfo.read (peerInfoReader);
+            for (PeerInfoDAO peer : peerInfo.getPeerInfo()) {
+                if (peerId == peer.getPeerId()) {
+                    ipAddr = peer.getPeerAddress();
+                    portNo = peer.getPort();
+                    hasFile = peer.hasFile();
+                    break; // Stopping since it can be only be connected to existing peers. Peers greater than peerId are not instantiated yet
+                }
+                else { 
+                    peersToBeConnected.add (peer);
+                    LoggerConfiguration.getLogger().conf ("Read configuration for peer: " + peer);
+                }
+            }
+        }
+        catch (Exception ex) {
+            LoggerConfiguration.getLogger().severe (ex);
+            return;
+        }
+        finally {
+            try { commonPropReader.close(); }
+            catch (Exception e) {}
+            try { peerInfoReader.close(); }
+            catch (Exception e) {}
+        }
+
+        FileTransferProcess fileTransferProcess = new FileTransferProcess (peerId, ipAddr, portNo, hasFile, peerInfo.getPeerInfo(), commonProperties); // instantiates the File Transfer process object used for peer-to-peer transfer
+        fileTransferProcess.initializeManagers();
+        Thread t = new Thread (fileTransferProcess); // Creating a thread to handle the operations of the peer to peer file transfer and communication between threads are handled in it
+        t.setName ("PeerProcess-" + peerId);
+        t.start();
+
+        LoggerConfiguration.getLogger().debug ("Initializing the connections to existing " + peersToBeConnected.size() + " peers.");
+        fileTransferProcess.initializeConnectionToPeers (peersToBeConnected);
+        try {
+            Thread.sleep(5);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+    
+    /**
+     * Function used to read the common properties configuration file
+     */
+    public static Properties readCommonProperties (Reader reader) throws Exception {
+
+        final Properties commonProperties = new Properties() {
+           
+			private static final long serialVersionUID = 1L;
+
+			@Override
+            public synchronized void load(Reader reader)
+                    throws IOException {
+                BufferedReader in = new BufferedReader(reader);
+                int i = 0;
+                for (String line; (line = in.readLine()) != null; i++) {
+                    line = line.trim();
+                    if ((line.length() <= 0) || (line.startsWith (COMMENT_KEYWORD))) {
+                        continue;
+                    }
+                    String[] props = line.split("\\s+");
+                    if (props.length <=1) {
+                        throw new IOException (new ParseException (line, i));
+                    }
+                    setProperty(props[0].trim(), props[1].trim());
+                }
+            }
+			
+        };
+
+        commonProperties.load (reader);
+        for (CommonProperties property : CommonProperties.values()) {
+            if (!commonProperties.containsKey(property.toString())) {
+                throw new Exception ("Property: " + property + " is missing in Common Properties");
+            }
+        }
+
+        return commonProperties;
+    }
+}
